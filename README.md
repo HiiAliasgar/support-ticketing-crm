@@ -3,7 +3,8 @@
 A full-stack help-desk application for creating, searching, filtering, and
 resolving customer support tickets — built as a production-grade capstone.
 
-**Live URL:** `<your railway url>`  
+**Live URL:** `<deployed here>`  
+**Repository:** https://github.com/HiiAliasgar/support-ticketing-crm  
 **Stack:** FastAPI (Python) · SQLite · React (Vite + Tailwind) · Docker
 
 ![stack](https://img.shields.io/badge/backend-FastAPI%20%2F%20SQLite-0fa669)
