@@ -3,7 +3,7 @@
 A full-stack help-desk application for creating, searching, filtering, and
 resolving customer support tickets — built as a production-grade capstone.
 
-**Live URL:** `<deployed here>`  
+**Live URL:** https://support-ticketing-crm-production-1ba5.up.railway.app  
 **Repository:** https://github.com/HiiAliasgar/support-ticketing-crm  
 **Stack:** FastAPI (Python) · SQLite · React (Vite + Tailwind) · Docker
 
