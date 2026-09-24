@@ -1,0 +1,9 @@
+@import "tailwindcss";
+
+html {
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  @apply bg-slate-100 text-slate-900;
+}
