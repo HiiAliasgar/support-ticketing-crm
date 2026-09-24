@@ -135,7 +135,7 @@ def main():
 
         # --- Auth ----------------------------------------------------------
         status, login_body, _ = request(
-            "POST", "/api/auth/login", {"username": "admin", "password": "SupportTick2026!"}
+            "POST", "/api/auth/login", {"username": "aliasgar", "password": "SupportTick2026!"}
         )
         assert status == 200, login_body
         token = login_body["token"]
@@ -143,10 +143,10 @@ def main():
         auth = {"Authorization": f"Bearer {token}"}
 
         status, me, _ = request("GET", "/api/auth/me", headers=auth)
-        assert status == 200 and me["username"] == "admin"
+        assert status == 200 and me["username"] == "aliasgar"
 
         status, bad, _ = request(
-            "POST", "/api/auth/login", {"username": "admin", "password": "nope"}
+            "POST", "/api/auth/login", {"username": "aliasgar", "password": "nope"}
         )
         assert status == 401
         print("[6] login/me OK")

@@ -57,7 +57,7 @@ export default function LoginPage() {
             onChange={(e) => setUsername(e.target.value)}
             autoComplete="username"
             className={inputClass}
-            placeholder="admin"
+            placeholder="aliasgar"
           />
         </label>
         <label className="block">
@@ -81,7 +81,7 @@ export default function LoginPage() {
       </form>
 
       <p className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-center text-xs text-slate-500">
-        Demo console access — admin: <code className="font-mono text-slate-700">admin</code> /
+        Demo console access — admin: <code className="font-mono text-slate-700">aliasgar</code> /
         <code className="font-mono text-slate-700">SupportTick2026!</code> &nbsp;·&nbsp; agent:{" "}
         <code className="font-mono text-slate-700">riley</code> /
         <code className="font-mono text-slate-700">agent123456</code>

@@ -240,7 +240,7 @@ export default function AdminPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {agent.username === "admin" ? (
+                        {agent.role === "admin" ? (
                           <span className="text-xs text-slate-300">Protected</span>
                         ) : (
                           <button

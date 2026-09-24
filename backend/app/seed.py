@@ -59,7 +59,7 @@ DEMO_NOTES = {
     ],
 }
 
-DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_USERNAME = "aliasgar"
 DEFAULT_ADMIN_PASSWORD = "SupportTick2026!"
 DEFAULT_AGENT_PASSWORD = "agent123456"
 
@@ -81,41 +81,54 @@ def maybe_seed_users(db=None) -> None:
     """Create the admin + demo agents and default settings if the users table is empty."""
     db = db or SessionLocal()
     try:
-        if db.scalar(select(func.count(User.id))) or 0:
-            return
+        users_exist = bool(db.scalar(select(func.count(User.id))) or 0)
 
-        admin_password = os.getenv("ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
-        agent_password = os.getenv("AGENT_PASSWORD", DEFAULT_AGENT_PASSWORD)
+        target_username = os.getenv("ADMIN_USERNAME", DEFAULT_ADMIN_USERNAME)
 
-        digest, salt, iterations = hash_password(admin_password)
-        db.add(
-            User(
-                username=os.getenv("ADMIN_USERNAME", DEFAULT_ADMIN_USERNAME),
-                display_name="System Administrator",
-                role="admin",
-                password_hash=digest,
-                salt=salt,
-                password_iterations=iterations,
-            )
-        )
+        if not users_exist:
+            admin_password = os.getenv("ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
+            agent_password = os.getenv("AGENT_PASSWORD", DEFAULT_AGENT_PASSWORD)
 
-        for username, display_name in AGENTS:
-            digest, salt, iterations = hash_password(agent_password)
+            digest, salt, iterations = hash_password(admin_password)
             db.add(
                 User(
-                    username=username,
-                    display_name=display_name,
-                    role="agent",
+                    username=target_username,
+                    display_name="System Administrator",
+                    role="admin",
                     password_hash=digest,
                     salt=salt,
                     password_iterations=iterations,
                 )
             )
 
-        for key, value in DEFAULT_SETTINGS.items():
-            db.add(Setting(key=key, value=value))
+            for username, display_name in AGENTS:
+                digest, salt, iterations = hash_password(agent_password)
+                db.add(
+                    User(
+                        username=username,
+                        display_name=display_name,
+                        role="agent",
+                        password_hash=digest,
+                        salt=salt,
+                        password_iterations=iterations,
+                    )
+                )
 
-        db.commit()
+            for key, value in DEFAULT_SETTINGS.items():
+                db.add(Setting(key=key, value=value))
+
+            db.commit()
+            return
+
+        existing_admin = db.scalar(select(User).where(User.role == "admin"))
+        if (
+            existing_admin
+            and existing_admin.username != target_username
+            and db.scalar(select(User).where(User.username == target_username)) is None
+        ):
+            existing_admin.username = target_username
+            existing_admin.display_name = "System Administrator"
+            db.commit()
     finally:
         if db is not None:
             db.close()

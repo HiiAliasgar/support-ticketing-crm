@@ -154,7 +154,7 @@ def test_health(client):
 
 
 # --- Auth -----------------------------------------------------------------
-def auth_headers(client, username="admin", password="SupportTick2026!"):
+def auth_headers(client, username="aliasgar", password="SupportTick2026!"):
     response = client.post("/api/auth/login", json={"username": username, "password": password})
     assert response.status_code == 200, response.text
     token = response.json()["token"]
@@ -163,19 +163,19 @@ def auth_headers(client, username="admin", password="SupportTick2026!"):
 
 def test_login_and_me(client):
     response = client.post(
-        "/api/auth/login", json={"username": "admin", "password": "SupportTick2026!"}
+        "/api/auth/login", json={"username": "aliasgar", "password": "SupportTick2026!"}
     )
     assert response.status_code == 200
     body = response.json()
     assert body["token"]
     assert body["user"]["role"] == "admin"
-    assert body["user"]["username"] == "admin"
+    assert body["user"]["username"] == "aliasgar"
 
     me = client.get("/api/auth/me", headers=auth_headers(client))
     assert me.status_code == 200
-    assert me.json()["username"] == "admin"
+    assert me.json()["username"] == "aliasgar"
 
-    bad = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+    bad = client.post("/api/auth/login", json={"username": "aliasgar", "password": "wrong"})
     assert bad.status_code == 401
 
     missing_token = client.get("/api/auth/me")
@@ -206,7 +206,7 @@ def test_admin_routes_require_admin(client):
     admin = client.get("/api/admin/agents", headers=admin_headers)
     assert admin.status_code == 200
     usernames = {u["username"] for u in admin.json()}
-    assert {"admin", "riley", "hannah", "devon"} <= usernames
+    assert {"aliasgar", "riley", "hannah", "devon"} <= usernames
 
 
 def test_admin_crud_agents(client):
@@ -235,7 +235,7 @@ def test_admin_crud_agents(client):
     assert patched.json()["active"] is False
     assert patched.json()["display_name"] == "Taylor R."
 
-    admin_id = next(u["id"] for u in client.get("/api/admin/agents", headers=headers).json() if u["username"] == "admin")
+    admin_id = next(u["id"] for u in client.get("/api/admin/agents", headers=headers).json() if u["username"] == "aliasgar")
 
     demote_self = client.patch(f"/api/admin/agents/{admin_id}", headers=headers, json={"role": "agent"})
     assert demote_self.status_code == 422
