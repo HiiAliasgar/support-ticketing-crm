@@ -19,9 +19,10 @@ import {
 } from "../api";
 import Spinner from "../components/Spinner";
 import { formatDate } from "../format";
+import { useAuth } from "../auth";
 
 const TABS = [
-  { key: "agents", label: "Agents", icon: Users },
+  { key: "agents", label: "Team", icon: Users },
   { key: "settings", label: "Settings", icon: SettingsIcon },
   { key: "audit", label: "Audit log", icon: Activity },
 ];
@@ -30,13 +31,19 @@ const inputClass =
   "w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm shadow-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
 
 export default function AdminPage() {
+  const { user: me } = useAuth();
   const [tab, setTab] = useState("agents");
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState(null);
 
   // agents tab
   const [agents, setAgents] = useState([]);
-  const [newAgent, setNewAgent] = useState({ username: "", display_name: "", password: "" });
+  const [newAgent, setNewAgent] = useState({
+    username: "",
+    display_name: "",
+    password: "",
+    role: "agent",
+  });
   const [creatingAgent, setCreatingAgent] = useState(false);
   const [agentError, setAgentError] = useState(null);
 
@@ -87,9 +94,9 @@ export default function AdminPage() {
     setCreatingAgent(true);
     try {
       await adminCreateAgent(newAgent);
-      setNewAgent({ username: "", display_name: "", password: "" });
+      setNewAgent({ username: "", display_name: "", password: "", role: "agent" });
       refreshAgents();
-      showFeedback("Agent created");
+      showFeedback(`Created ${newAgent.role === "admin" ? "admin" : "agent"} ${newAgent.username}`);
     } catch (err) {
       setAgentError(err.message);
     } finally {
@@ -98,6 +105,7 @@ export default function AdminPage() {
   };
 
   const handleToggleAgent = async (agent) => {
+    if (agent.id === me?.id) return;
     try {
       await adminUpdateAgent(agent.id, { active: !agent.active });
       refreshAgents();
@@ -227,7 +235,17 @@ export default function AdminPage() {
                       <td className="px-4 py-3 text-slate-600">
                         {agent.display_name ?? "—"}
                       </td>
-                      <td className="px-4 py-3 text-slate-600">{agent.role}</td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${
+                            agent.role === "admin"
+                              ? "bg-indigo-50 text-indigo-700 ring-indigo-200"
+                              : "bg-slate-100 text-slate-600 ring-slate-300"
+                          }`}
+                        >
+                          {agent.role}
+                        </span>
+                      </td>
                       <td className="px-4 py-3">
                         <span
                           className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${
@@ -240,8 +258,8 @@ export default function AdminPage() {
                         </span>
                       </td>
                       <td className="px-4 py-3">
-                        {agent.role === "admin" ? (
-                          <span className="text-xs text-slate-300">Protected</span>
+                        {agent.id === me?.id ? (
+                          <span className="text-xs text-slate-300">You (protected)</span>
                         ) : (
                           <button
                             onClick={() => handleToggleAgent(agent)}
@@ -260,7 +278,7 @@ export default function AdminPage() {
 
           <form
             onSubmit={handleCreateAgent}
-            className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-4"
+            className="grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-5"
           >
             <input
               type="text"
@@ -277,6 +295,15 @@ export default function AdminPage() {
               placeholder="Display name"
               className={inputClass}
             />
+            <select
+              value={newAgent.role}
+              onChange={(e) => setNewAgent({ ...newAgent, role: e.target.value })}
+              className={inputClass}
+              aria-label="Role"
+            >
+              <option value="agent">Role: Agent</option>
+              <option value="admin">Role: Admin</option>
+            </select>
             <input
               type="password"
               value={newAgent.password}
@@ -291,9 +318,9 @@ export default function AdminPage() {
               disabled={creatingAgent || !newAgent.username || !newAgent.password}
               className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition hover:bg-indigo-700 disabled:opacity-50"
             >
-              <Plus size={15} /> {creatingAgent ? "Adding…" : "Add agent"}
+              <Plus size={15} /> {creatingAgent ? "Adding…" : "Add member"}
             </button>
-            {agentError && <p className="text-xs text-red-600 sm:col-span-4">{agentError}</p>}
+            {agentError && <p className="text-xs text-red-600 sm:col-span-5">{agentError}</p>}
           </form>
         </div>
       )}

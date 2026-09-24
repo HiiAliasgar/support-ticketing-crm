@@ -244,6 +244,41 @@ def test_admin_crud_agents(client):
     assert deactivate_self.status_code == 422
 
 
+def test_admin_can_create_and_manage_other_admins(client):
+    headers = auth_headers(client)
+    created = client.post(
+        "/api/admin/agents",
+        headers=headers,
+        json={"username": "mina", "display_name": "Mina Admin", "password": "minapass123", "role": "admin"},
+    )
+    assert created.status_code == 201
+    assert created.json()["role"] == "admin"
+    other_admin_id = created.json()["id"]
+
+    # the new admin can sign in and use admin routes
+    mina_headers = auth_headers(client, "mina", "minapass123")
+    assert client.get("/api/admin/agents", headers=mina_headers).status_code == 200
+
+    # we can disable another admin
+    disabled = client.patch(
+        f"/api/admin/agents/{other_admin_id}", headers=headers, json={"active": False}
+    )
+    assert disabled.status_code == 200 and disabled.json()["active"] is False
+    assert client.post(
+        "/api/auth/login", json={"username": "mina", "password": "minapass123"}
+    ).status_code == 401
+
+    # re-enable, then demote to agent
+    client.patch(f"/api/admin/agents/{other_admin_id}", headers=headers, json={"active": True})
+    demoted = client.patch(
+        f"/api/admin/agents/{other_admin_id}", headers=headers, json={"role": "agent"}
+    )
+    assert demoted.status_code == 200 and demoted.json()["role"] == "agent"
+
+    # a demoted admin can no longer reach admin routes (existing session is checked per request)
+    assert client.get("/api/admin/agents", headers=mina_headers).status_code == 403
+
+
 def test_admin_settings(client):
     headers = auth_headers(client)
     updated = client.put(
