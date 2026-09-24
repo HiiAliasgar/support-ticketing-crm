@@ -33,3 +33,6 @@ Thumbs.db
 
 # Railway local config
 .railway/
+
+# Local tooling (e.g. downloaded Railway CLI)
+.tools/
