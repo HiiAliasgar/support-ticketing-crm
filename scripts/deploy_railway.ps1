@@ -1,23 +1,35 @@
 # Deploys the repo to Railway and prints the public URL.
 #
-# Requirements: a Railway account token from
-#   https://railway.com/account/tokens  (create, then copy)
+# Two supported flows (the exact one used to bring this app live):
 #
-# Usage:
-#   $env:RAILWAY_TOKEN="<your token>"
-#   .\scripts\deploy_railway.ps1
+#   A) AWORKSPACE/account token + one-time bootstrap:
+#       1. Create project + a project token via the Railway GraphQL API
+#          (see the bootstrap steps used in README/production notes).
+#       2. Paste the PROJECT token here.
 #
-# What it does:
+#   B) PROJECT token (recommended for redeploys):
+#       $env:RAILWAY_TOKEN="<project-token>"
+#       .\scripts\deploy_railway.ps1 -Service <service-id>
+#
+# Before running anywhere: API token vs project token confusion is real.
+#   - RAILWAY_TOKEN        = project token (used by `railway up`)
+#   - RAILWAY_API_TOKEN    = account/workspace token (GraphQL API / `railway api`)
+#
+# What this script does:
 #   1. downloads the Railway CLI (portable, into .tools/)
-#   2. logs in with your token
-#   3. creates project "support-ticketing-crm"
-#   4. uploads this directory and builds it (Dockerfile) in the cloud
-#   5. provisions a public railway.app domain
+#   2. verifies the token via `railway service list`
+#   3. `railway up --detach --yes` uploads this directory and builds it
+#      (Dockerfile) in the cloud, deploying to the --Service or the linked one
+#   4. provisions a public railway.app domain (if missing)
+
+param(
+    [string]$Service
+)
 
 $ErrorActionPreference = "Stop"
 
 if (-not $env:RAILWAY_TOKEN) {
-    throw "Set RAILWAY_TOKEN first: https://railway.com/account/tokens"
+    throw "Set RAILWAY_TOKEN to a Railway PROJECT token first."
 }
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -40,30 +52,30 @@ if (-not (Test-Path $exe)) {
     }
 }
 
-# --- 2. Auth check (the CLI authenticates purely via RAILWAY_TOKEN) ---------
-Write-Host "[2/4] Verifying token... (use a fresh 'Account token' from https://railway.com/account/tokens)"
-& $exe list | Out-Host
+# --- 2. Auth check -----------------------------------------------------------
+Write-Host "[2/4] Verifying token..."
+& $exe service list --json | Out-Host
 if ($LASTEXITCODE -ne 0) {
-    throw "Authentication failed. If the token was shown once before, it is revoked - generate a NEW one at https://railway.com/account/tokens with all scopes and no expiry, then rerun."
+    throw "Authentication failed. Use a PROJECT token (from project -> Settings -> Tokens), not an account token."
 }
 
-# --- 3. Project --------------------------------------------------------------
-Write-Host "[3/4] Creating project..."
+# --- 3. Deploy (uploads dir, builds Dockerfile in the cloud) -----------------
 Push-Location $root
 try {
-    & $exe init --name support-ticketing-crm | Out-Host
-    if ($LASTEXITCODE -ne 0) { throw "railway init failed" }
-
-    # --- 4. Deploy (builds the Dockerfile in the cloud) ---
-    Write-Host "[4/4] Deploying (detached) - this builds the Docker image in the cloud..."
-    & $exe up --detach | Out-Host
+    if ($Service) {
+        Write-Host "[3/4] Deploying to service $Service (detached)..."
+        & $exe up --detach --yes --service $Service | Out-Host
+    } else {
+        Write-Host "[3/4] Deploying (detached)..."
+        & $exe up --detach --yes | Out-Host
+    }
     if ($LASTEXITCODE -ne 0) { throw "railway up failed" }
 
-    Write-Host "Provisioning a public domain..."
+    Write-Host "[4/4] Ensuring a public domain..."
     & $exe domain | Out-Host
     Write-Host ""
-    Write-Host "Deploy started. Watch it at:"
-    & $exe logs --deployment | Out-Host
+    Write-Host "Deployment started. Track it with:"
+    Write-Host "  railway logs --deployment"
 } finally {
     Pop-Location
 }
