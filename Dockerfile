@@ -21,7 +21,8 @@ COPY backend/app /app/app
 COPY --from=frontend-build /build/frontend/dist /app/frontend/dist
 
 RUN mkdir -p /data
-ENV DATABASE_URL=sqlite:////data/support_crm.db
+ENV DATABASE_URL=sqlite:////data/support_crm.db \
+    STATIC_DIR=/app/frontend/dist
 
 EXPOSE 8000
 CMD ["sh", "-c", "uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]

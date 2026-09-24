@@ -180,6 +180,7 @@ def _find_frontend_build() -> Optional[str]:
         os.getenv("STATIC_DIR"),
         os.path.join(os.path.dirname(__file__), "..", "..", "frontend", "dist"),
         os.path.join(os.path.dirname(__file__), "static"),
+        "/app/frontend/dist",
     ]
     for path in candidates:
         if path and os.path.isdir(path):
