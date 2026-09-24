@@ -1,27 +1,56 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { ArrowLeft, Check, Mail, MessageSquarePlus, Send, User } from "lucide-react";
-import { addNote, getTicket, updateTicket } from "../api";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  ArrowLeft,
+  Check,
+  Mail,
+  MessageSquarePlus,
+  Send,
+  Trash2,
+  User,
+  UserCheck,
+} from "lucide-react";
+import {
+  addNote,
+  assignTicket,
+  deleteTicket,
+  getTicket,
+  listAgents,
+  updateTicket,
+} from "../api";
+import { useAuth } from "../auth";
 import StatusBadge from "../components/StatusBadge";
+import PriorityBadge from "../components/PriorityBadge";
 import Spinner from "../components/Spinner";
 import { formatDate } from "../format";
 
 const STATUSES = ["Open", "In Progress", "Closed"];
+const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
 
 export default function TicketDetailPage() {
   const { ticketId } = useParams();
+  const navigate = useNavigate();
+  const { user, isAdmin } = useAuth();
   const [ticket, setTicket] = useState(null);
+  const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   const [status, setStatus] = useState("Open");
-  const [statusSaving, setStatusSaving] = useState(false);
-  const [statusMessage, setStatusMessage] = useState(null);
+  const [priority, setPriority] = useState("Medium");
+  const [saving, setSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState(null);
+
+  const [assigneeId, setAssigneeId] = useState("");
+  const [assignSaving, setAssignSaving] = useState(false);
+  const [assignMessage, setAssignMessage] = useState(null);
 
   const [noteText, setNoteText] = useState("");
-  const [author, setAuthor] = useState("Agent");
+  const [author, setAuthor] = useState("");
   const [noteSaving, setNoteSaving] = useState(false);
   const [noteError, setNoteError] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteMessage, setDeleteMessage] = useState(null);
 
   const load = () => {
     setLoading(true);
@@ -30,26 +59,74 @@ export default function TicketDetailPage() {
       .then((data) => {
         setTicket(data);
         setStatus(data.status);
+        setPriority(data.priority ?? "Medium");
+        setAssigneeId(data.assignee_id ? String(data.assignee_id) : "");
+        if (!author) setAuthor(data.assignee_name ?? "Agent");
       })
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false));
   };
 
+  useEffect(() => {
+    listAgents()
+      .then(setAgents)
+      .catch(() => setAgents([]));
+  }, []);
+
+  useEffect(() => {
+    if (!author && user?.display_name) setAuthor(user.display_name);
+  }, [user, author]);
+
   useEffect(load, [ticketId]);
 
-  const handleStatusUpdate = async () => {
-    if (!ticket || status === ticket.status) return;
-    setStatusSaving(true);
-    setStatusMessage(null);
+  const handleSave = async () => {
+    if (!ticket || (status === ticket.status && priority === (ticket.priority ?? "Medium"))) {
+      return;
+    }
+    setSaving(true);
+    setSaveMessage(null);
     try {
-      const result = await updateTicket(ticketId, { status });
-      setTicket((prev) => ({ ...prev, status, updated_at: result.updated_at }));
-      setStatusMessage("Status updated");
-      setTimeout(() => setStatusMessage(null), 2500);
+      const result = await updateTicket(ticketId, { status, priority });
+      setTicket((prev) => ({ ...prev, status, priority, updated_at: result.updated_at }));
+      setSaveMessage("Saved");
+      setTimeout(() => setSaveMessage(null), 2500);
     } catch (err) {
-      setStatusMessage(`Failed: ${err.message}`);
+      setSaveMessage(`Failed: ${err.message}`);
     } finally {
-      setStatusSaving(false);
+      setSaving(false);
+    }
+  };
+
+  const handleAssign = async () => {
+    if (!assigneeId && !ticket.assignee_id) return;
+    setAssignSaving(true);
+    setAssignMessage(null);
+    try {
+      const result = await assignTicket(ticketId, assigneeId ? Number(assigneeId) : null);
+      setTicket((prev) => ({
+        ...prev,
+        assignee_id: result.assignee_id,
+        assignee_name: result.assignee_name,
+        updated_at: result.updated_at,
+      }));
+      setAssignMessage("Assignee saved");
+      setTimeout(() => setAssignMessage(null), 2500);
+    } catch (err) {
+      setAssignMessage(`Failed: ${err.message}`);
+    } finally {
+      setAssignSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm(`Delete ${ticket.ticket_id} permanently? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await deleteTicket(ticketId);
+      navigate("/");
+    } catch (err) {
+      setDeleteMessage(err.message);
+      setDeleting(false);
     }
   };
 
@@ -59,7 +136,10 @@ export default function TicketDetailPage() {
     setNoteSaving(true);
     setNoteError(null);
     try {
-      await addNote(ticketId, { note_text: noteText.trim(), author: author.trim() || "Agent" });
+      await addNote(ticketId, {
+        note_text: noteText.trim(),
+        author: author.trim() || "Agent",
+      });
       setNoteText("");
       await load();
     } catch (err) {
@@ -86,23 +166,36 @@ export default function TicketDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Link
-        to="/"
-        className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-indigo-600"
-      >
-        <ArrowLeft size={16} /> Back to tickets
-      </Link>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-600 hover:text-indigo-600"
+        >
+          <ArrowLeft size={16} /> Back to tickets
+        </Link>
+        {isAdmin && (
+          <button
+            onClick={handleDelete}
+            disabled={deleting}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-100 disabled:opacity-50"
+          >
+            <Trash2 size={15} /> {deleting ? "Deleting…" : "Delete ticket"}
+          </button>
+        )}
+        {deleteMessage && (
+          <span className="text-xs text-red-600">{deleteMessage}</span>
+        )}
+      </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <h1 className="text-xl font-bold text-slate-900">{ticket.subject}</h1>
               <StatusBadge status={ticket.status} />
+              <PriorityBadge priority={ticket.priority} />
             </div>
-            <p className="mt-1 font-mono text-sm text-slate-500">
-              {ticket.ticket_id}
-            </p>
+            <p className="mt-1 font-mono text-sm text-slate-500">{ticket.ticket_id}</p>
           </div>
           <div className="text-right text-xs text-slate-400">
             <p>Created {formatDate(ticket.created_at)}</p>
@@ -130,45 +223,104 @@ export default function TicketDetailPage() {
           </div>
 
           <div className="flex items-start gap-3 sm:justify-end">
+            <span className="grid h-9 w-9 place-items-center rounded-full bg-slate-100 text-slate-500">
+              <UserCheck size={16} />
+            </span>
             <div>
-              <dt className="text-xs uppercase tracking-wide text-slate-400">
-                Update status
-              </dt>
+              <dt className="text-xs uppercase tracking-wide text-slate-400">Assignee</dt>
               <dd className="mt-1 flex flex-wrap items-center gap-2">
                 <select
-                  value={status}
+                  value={assigneeId}
                   onChange={(e) => {
-                    setStatus(e.target.value);
-                    setStatusMessage(null);
+                    setAssigneeId(e.target.value);
+                    setAssignMessage(null);
                   }}
                   className="rounded-xl border border-slate-300 bg-white px-3 py-1.5 text-sm shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
                 >
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
+                  <option value="">Unassigned</option>
+                  {agents
+                    .filter((a) => a.active)
+                    .map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.display_name ?? agent.username}
+                      </option>
+                    ))}
                 </select>
                 <button
-                  onClick={handleStatusUpdate}
-                  disabled={statusSaving || status === ticket.status}
+                  onClick={handleAssign}
+                  disabled={assignSaving}
                   className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
                 >
-                  <Check size={15} /> {statusSaving ? "Saving…" : "Save"}
+                  <Check size={15} /> {assignSaving ? "Saving…" : "Assign"}
                 </button>
-                {statusMessage && (
+                {assignMessage && (
                   <span
                     className={`text-xs ${
-                      statusMessage.startsWith("Failed") ? "text-red-600" : "text-emerald-600"
+                      assignMessage.startsWith("Failed") ? "text-red-600" : "text-emerald-600"
                     }`}
                   >
-                    {statusMessage}
+                    {assignMessage}
                   </span>
                 )}
               </dd>
             </div>
           </div>
         </dl>
+
+        <div className="mt-5 flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 pt-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-slate-400">
+              Status
+              <select
+                value={status}
+                onChange={(e) => {
+                  setStatus(e.target.value);
+                  setSaveMessage(null);
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm normal-case shadow-sm outline-none focus:border-indigo-500"
+              >
+                {STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-1.5 text-xs uppercase tracking-wide text-slate-400">
+              Priority
+              <select
+                value={priority}
+                onChange={(e) => {
+                  setPriority(e.target.value);
+                  setSaveMessage(null);
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm normal-case shadow-sm outline-none focus:border-indigo-500"
+              >
+                {PRIORITIES.map((p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              onClick={handleSave}
+              disabled={saving || (status === ticket.status && priority === (ticket.priority ?? "Medium"))}
+              className="inline-flex items-center gap-1.5 rounded-xl bg-indigo-600 px-3.5 py-1.5 text-sm font-medium text-white transition hover:bg-indigo-700 disabled:opacity-50"
+            >
+              <Check size={15} /> {saving ? "Saving…" : "Save"}
+            </button>
+            {saveMessage && (
+              <span
+                className={`text-xs ${
+                  saveMessage.startsWith("Failed") ? "text-red-600" : "text-emerald-600"
+                }`}
+              >
+                {saveMessage}
+              </span>
+            )}
+          </div>
+        </div>
 
         <div className="mt-6 border-t border-slate-100 pt-5">
           <h2 className="text-sm font-semibold text-slate-700">Description</h2>

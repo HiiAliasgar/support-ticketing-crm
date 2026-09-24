@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app import main as app_module
 from app.database import Base, get_db
+from app.seed import maybe_seed_users
 
 TICKET_PAYLOAD = {
     "customer_name": "Ada Lovelace",
@@ -22,6 +23,7 @@ def client(tmp_path) -> TestClient:
     )
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
+    maybe_seed_users(TestingSessionLocal())
 
     def override_get_db():
         db = TestingSessionLocal()
@@ -149,3 +151,216 @@ def test_dashboard_counts(client):
 
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
+
+
+# --- Auth -----------------------------------------------------------------
+def auth_headers(client, username="admin", password="SupportTick2026!"):
+    response = client.post("/api/auth/login", json={"username": username, "password": password})
+    assert response.status_code == 200, response.text
+    token = response.json()["token"]
+    return {"Authorization": f"Bearer {token}"}
+
+
+def test_login_and_me(client):
+    response = client.post(
+        "/api/auth/login", json={"username": "admin", "password": "SupportTick2026!"}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token"]
+    assert body["user"]["role"] == "admin"
+    assert body["user"]["username"] == "admin"
+
+    me = client.get("/api/auth/me", headers=auth_headers(client))
+    assert me.status_code == 200
+    assert me.json()["username"] == "admin"
+
+    bad = client.post("/api/auth/login", json={"username": "admin", "password": "wrong"})
+    assert bad.status_code == 401
+
+    missing_token = client.get("/api/auth/me")
+    assert missing_token.status_code == 401
+
+    agent_login = client.post("/api/auth/login", json={"username": "riley", "password": "agent123456"})
+    assert agent_login.status_code == 200
+    assert agent_login.json()["user"]["role"] == "agent"
+
+
+def test_logout_invalidates_session(client):
+    headers = auth_headers(client)
+    assert client.get("/api/auth/me", headers=headers).status_code == 200
+    assert client.post("/api/auth/logout", headers=headers).json()["success"] is True
+    assert client.get("/api/auth/me", headers=headers).status_code == 401
+
+
+def test_admin_routes_require_admin(client):
+    agent_headers = auth_headers(client, "riley", "agent123456")
+    admin_headers = auth_headers(client)
+
+    anon = client.get("/api/admin/agents")
+    assert anon.status_code == 401
+
+    agent = client.get("/api/admin/agents", headers=agent_headers)
+    assert agent.status_code == 403
+
+    admin = client.get("/api/admin/agents", headers=admin_headers)
+    assert admin.status_code == 200
+    usernames = {u["username"] for u in admin.json()}
+    assert {"admin", "riley", "hannah", "devon"} <= usernames
+
+
+def test_admin_crud_agents(client):
+    headers = auth_headers(client)
+    created = client.post(
+        "/api/admin/agents",
+        headers=headers,
+        json={"username": "taylor", "display_name": "Taylor Reid", "password": "taylors123"},
+    )
+    assert created.status_code == 201
+    agent_id = created.json()["id"]
+
+    duplicate = client.post(
+        "/api/admin/agents",
+        headers=headers,
+        json={"username": "taylor", "display_name": "X", "password": "something123"},
+    )
+    assert duplicate.status_code == 409
+
+    patched = client.patch(
+        f"/api/admin/agents/{agent_id}",
+        headers=headers,
+        json={"active": False, "display_name": "Taylor R."},
+    )
+    assert patched.status_code == 200
+    assert patched.json()["active"] is False
+    assert patched.json()["display_name"] == "Taylor R."
+
+    admin_id = next(u["id"] for u in client.get("/api/admin/agents", headers=headers).json() if u["username"] == "admin")
+
+    demote_self = client.patch(f"/api/admin/agents/{admin_id}", headers=headers, json={"role": "agent"})
+    assert demote_self.status_code == 422
+
+    deactivate_self = client.patch(f"/api/admin/agents/{admin_id}", headers=headers, json={"active": False})
+    assert deactivate_self.status_code == 422
+
+
+def test_admin_settings(client):
+    headers = auth_headers(client)
+    updated = client.put(
+        "/api/admin/settings",
+        headers=headers,
+        json={"workspace_name": "Acme Support", "ticket_prefix": "SUP", "sla_hours": 8},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["workspace_name"] == "Acme Support"
+    assert updated.json()["ticket_prefix"] == "SUP"
+
+    created = client.post("/api/tickets", json=TICKET_PAYLOAD)
+    assert created.json()["ticket_id"].startswith("SUP-")
+
+
+def test_admin_audit_and_export(client):
+    headers = auth_headers(client)
+    client.put("/api/admin/settings", headers=headers, json={"sla_hours": 12})
+    ticket = client.post("/api/tickets", json=TICKET_PAYLOAD).json()
+
+    audit = client.get("/api/admin/audit", headers=headers)
+    assert audit.status_code == 200
+    actions = [e["action"] for e in audit.json()["items"]]
+    assert "settings.update" in actions
+
+    exported = client.get("/api/admin/export", headers=headers)
+    assert exported.status_code == 200
+    assert "text/csv" in exported.headers["content-type"]
+    assert exported.headers["content-disposition"].startswith("attachment")
+    assert "ticket_id" in exported.text
+
+
+def test_bulk_status_and_delete_ticket(client):
+    headers = auth_headers(client)
+    first = client.post("/api/tickets", json=TICKET_PAYLOAD).json()
+    second = client.post(
+        "/api/tickets", json={**TICKET_PAYLOAD, "customer_name": "Grace Hopper"}
+    ).json()
+    ids = [first["ticket_id"], second["ticket_id"]]
+
+    bulk = client.post(
+        "/api/admin/tickets/bulk-status",
+        headers=headers,
+        json={"status": "Closed", "ticket_ids": ids},
+    )
+    assert bulk.status_code == 200
+    assert bulk.json()["updated"] == 2
+    for tid in ids:
+        detail = client.get(f"/api/tickets/{tid}").json()
+        assert detail["status"] == "Closed"
+
+    agent_headers = auth_headers(client, "riley", "agent123456")
+    as_agent = client.delete(f"/api/tickets/{ids[0]}", headers=agent_headers)
+    assert as_agent.status_code == 403
+
+    deleted = client.delete(f"/api/tickets/{ids[0]}", headers=headers)
+    assert deleted.status_code == 200
+    assert client.get(f"/api/tickets/{ids[0]}").status_code == 404
+
+
+# --- Priority / assignee / pagination --------------------------------------
+def test_create_with_priority_and_filter(client):
+    created = client.post(
+        "/api/tickets", json={**TICKET_PAYLOAD, "priority": "Urgent"}
+    )
+    assert created.status_code == 201
+    detail = client.get(f"/api/tickets/{created.json()['ticket_id']}").json()
+    assert detail["priority"] == "Urgent"
+
+    low = client.post("/api/tickets", json={**TICKET_PAYLOAD, "priority": "Low", "customer_name": "Barbara"})
+    urgent = client.get("/api/tickets", params={"priority": "Urgent"}).json()
+    assert len(urgent) == 1
+    assert urgent[0]["priority"] == "Urgent"
+
+    invalid = client.post("/api/tickets", json={**TICKET_PAYLOAD, "priority": "Nope"})
+    assert invalid.status_code == 422
+
+    filtered = client.get("/api/tickets", params={"status": "Open", "priority": "Urgent"})
+    assert filtered.status_code == 200
+
+
+def test_assign_ticket(client):
+    headers = auth_headers(client)
+    agents = {a["username"]: a for a in client.get("/api/agents").json()}
+    riley = agents["riley"]
+
+    created = client.post("/api/tickets", json=TICKET_PAYLOAD).json()
+    tid = created["ticket_id"]
+
+    assigned = client.post(
+        f"/api/tickets/{tid}/assign", headers=headers, json={"assignee_id": riley["id"]}
+    )
+    assert assigned.status_code == 200
+    detail = client.get(f"/api/tickets/{tid}").json()
+    assert detail["assignee_id"] == riley["id"]
+    assert detail["assignee_name"] == "Riley Patel"
+
+    unassigned = client.post(f"/api/tickets/{tid}/assign", headers=headers, json={"assignee_id": None})
+    assert unassigned.status_code == 200
+    assert client.get(f"/api/tickets/{tid}").json()["assignee_id"] is None
+
+    bad = client.post(f"/api/tickets/{tid}/assign", headers=headers, json={"assignee_id": 99999})
+    assert bad.status_code == 422
+
+
+def test_ticket_pagination(client):
+    for name in ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]:
+        client.post("/api/tickets", json={**TICKET_PAYLOAD, "customer_name": name})
+
+    page1 = client.get("/api/tickets", params={"page": 1, "per_page": 4}).json()
+    assert page1["total"] == 10
+    assert len(page1["items"]) == 4
+    assert page1["pages"] == 3
+
+    page3 = client.get("/api/tickets", params={"page": 3, "per_page": 4}).json()
+    assert len(page3["items"]) == 2
+
+    default_list = client.get("/api/tickets").json()
+    assert isinstance(default_list, list)
+    assert len(default_list) == 10

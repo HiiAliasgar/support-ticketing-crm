@@ -1,9 +1,12 @@
+import os
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import func, select
 
+from .auth import hash_password
 from .database import SessionLocal
-from .models import Note, Ticket
+from .models import Note, Setting, Ticket, User
+from .models import PRIORITIES
 
 DEMO_TICKETS = [
     ("Priya Sharma", "priya.sharma@acme.co", "Invoice shows duplicate charge",
@@ -56,20 +59,86 @@ DEMO_NOTES = {
     ],
 }
 
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_PASSWORD = "SupportTick2026!"
+DEFAULT_AGENT_PASSWORD = "agent123456"
 
-def maybe_seed() -> None:
-    """Populate a little demo data on first boot so the app looks alive."""
-    db = SessionLocal()
+AGENTS = [
+    ("riley", "Riley Patel"),
+    ("hannah", "Hannah Lee"),
+    ("devon", "Devon Costa"),
+]
+
+DEFAULT_SETTINGS = {
+    "workspace_name": "SupportTick",
+    "ticket_prefix": "TKT",
+    "sla_hours": "24",
+    "default_note_author": "Support Agent",
+}
+
+
+def maybe_seed_users(db=None) -> None:
+    """Create the admin + demo agents and default settings if the users table is empty."""
+    db = db or SessionLocal()
+    try:
+        if db.scalar(select(func.count(User.id))) or 0:
+            return
+
+        admin_password = os.getenv("ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
+        agent_password = os.getenv("AGENT_PASSWORD", DEFAULT_AGENT_PASSWORD)
+
+        digest, salt, iterations = hash_password(admin_password)
+        db.add(
+            User(
+                username=os.getenv("ADMIN_USERNAME", DEFAULT_ADMIN_USERNAME),
+                display_name="System Administrator",
+                role="admin",
+                password_hash=digest,
+                salt=salt,
+                password_iterations=iterations,
+            )
+        )
+
+        for username, display_name in AGENTS:
+            digest, salt, iterations = hash_password(agent_password)
+            db.add(
+                User(
+                    username=username,
+                    display_name=display_name,
+                    role="agent",
+                    password_hash=digest,
+                    salt=salt,
+                    password_iterations=iterations,
+                )
+            )
+
+        for key, value in DEFAULT_SETTINGS.items():
+            db.add(Setting(key=key, value=value))
+
+        db.commit()
+    finally:
+        if db is not None:
+            db.close()
+
+
+def maybe_seed(db=None) -> None:
+    """Populate a little demo ticket data on first boot so the app looks alive."""
+    db = db or SessionLocal()
     try:
         ticket_count = db.scalar(select(func.count(Ticket.id))) or 0
         if ticket_count:
             return
 
+        agents = db.scalars(select(User).where(User.role == "agent")).all()
+        admin = db.scalar(select(User).where(User.role == "admin"))
+
         now = datetime.now(timezone.utc)
         note_pool = list(DEMO_NOTES.values())
         for i, (name, email, subject, description) in enumerate(DEMO_TICKETS):
             status = ("Open", "In Progress", "Closed")[i % 3]
+            priority = PRIORITIES[i % len(PRIORITIES)]
             created_at = now - timedelta(days=(len(DEMO_TICKETS) - i) % 7, hours=(i * 3) % 12)
+            assignee = (agents or [admin])[i % max(len(agents or [admin]), 1)]
             ticket = Ticket(
                 ticket_id=f"TKT-{i + 1:04d}",
                 customer_name=name,
@@ -77,6 +146,8 @@ def maybe_seed() -> None:
                 subject=subject,
                 description=description,
                 status=status,
+                priority=priority,
+                assignee_id=assignee.id if assignee else None,
                 created_at=created_at,
                 updated_at=created_at,
             )

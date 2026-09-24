@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { Inbox } from "lucide-react";
 import StatusBadge from "./StatusBadge";
+import PriorityBadge from "./PriorityBadge";
 import { formatDate } from "../format";
 
 export default function TicketTable({ tickets }) {
@@ -23,9 +24,11 @@ export default function TicketTable({ tickets }) {
           <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
             <tr>
               <th className="px-4 py-3 font-medium">Ticket</th>
+              <th className="px-4 py-3 font-medium">Priority</th>
               <th className="px-4 py-3 font-medium">Customer</th>
               <th className="px-4 py-3 font-medium">Subject</th>
               <th className="px-4 py-3 font-medium">Status</th>
+              <th className="px-4 py-3 font-medium">Assignee</th>
               <th className="px-4 py-3 font-medium">Created</th>
             </tr>
           </thead>
@@ -40,6 +43,9 @@ export default function TicketTable({ tickets }) {
                     {ticket.ticket_id}
                   </Link>
                 </td>
+                <td className="whitespace-nowrap px-4 py-3">
+                  <PriorityBadge priority={ticket.priority} />
+                </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                   {ticket.customer_name}
                 </td>
@@ -53,6 +59,9 @@ export default function TicketTable({ tickets }) {
                 </td>
                 <td className="whitespace-nowrap px-4 py-3">
                   <StatusBadge status={ticket.status} />
+                </td>
+                <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
+                  {ticket.assignee_name ?? "Unassigned"}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">
                   {formatDate(ticket.created_at)}

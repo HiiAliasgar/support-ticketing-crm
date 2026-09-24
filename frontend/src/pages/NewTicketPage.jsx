@@ -8,6 +8,7 @@ const emptyForm = {
   customer_email: "",
   subject: "",
   description: "",
+  priority: "Medium",
 };
 
 export default function NewTicketPage() {
@@ -48,6 +49,7 @@ export default function NewTicketPage() {
         customer_email: form.customer_email.trim(),
         subject: form.subject.trim(),
         description: form.description.trim(),
+        priority: form.priority,
       });
       navigate(`/tickets/${created.ticket_id}`);
     } catch (err) {
@@ -154,6 +156,21 @@ export default function NewTicketPage() {
           {errors.description && (
             <span className="mt-1 block text-xs text-red-600">{errors.description}</span>
           )}
+        </label>
+
+        <label className="block">
+          <span className="mb-1.5 block text-sm font-medium text-slate-700">Priority</span>
+          <select
+            value={form.priority}
+            onChange={setField("priority")}
+            className={inputClass(false)}
+          >
+            {["Low", "Medium", "High", "Urgent"].map((level) => (
+              <option key={level} value={level}>
+                {level}
+              </option>
+            ))}
+          </select>
         </label>
 
         <div className="flex items-center justify-end gap-3 pt-1">
