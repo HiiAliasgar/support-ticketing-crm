@@ -16,13 +16,16 @@ TICKET_PAYLOAD = {
 
 
 @pytest.fixture()
-def client(tmp_path) -> TestClient:
+def client(tmp_path, monkeypatch) -> TestClient:
     engine = create_engine(
         f"sqlite:///{tmp_path / 'test.db'}",
         connect_args={"check_same_thread": False},
     )
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base.metadata.create_all(bind=engine)
+    monkeypatch.setenv("ADMIN_USERNAME", "aliasgar")
+    monkeypatch.setenv("ADMIN_PASSWORD", "test-admin-password")
+    monkeypatch.setenv("AGENT_PASSWORD", "test-agent-password")
     maybe_seed_users(TestingSessionLocal())
 
     def override_get_db():
@@ -34,6 +37,12 @@ def client(tmp_path) -> TestClient:
 
     app_module.app.dependency_overrides[get_db] = override_get_db
     with TestClient(app_module.app) as test_client:
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "aliasgar", "password": "test-admin-password"},
+        )
+        assert login.status_code == 200, login.text
+        test_client.headers.update({"Authorization": f"Bearer {login.json()['token']}"})
         yield test_client
     app_module.app.dependency_overrides.clear()
 
@@ -149,12 +158,30 @@ def test_dashboard_counts(client):
     assert dashboard["open_count"] == 1
 
 
+
+
+def test_internal_ticket_endpoints_require_authentication(client):
+    created = client.post("/api/tickets", json=TICKET_PAYLOAD).json()
+    ticket_id = created["ticket_id"]
+    anonymous = {"Authorization": ""}
+
+    assert client.get("/api/tickets", headers=anonymous).status_code == 401
+    assert client.get(f"/api/tickets/{ticket_id}", headers=anonymous).status_code == 401
+    assert client.put(f"/api/tickets/{ticket_id}", json={"status": "Closed"}, headers=anonymous).status_code == 401
+    assert client.post(
+        f"/api/tickets/{ticket_id}/notes",
+        json={"note_text": "unauthorized", "author": "anonymous"},
+        headers=anonymous,
+    ).status_code == 401
+    assert client.get("/api/agents", headers=anonymous).status_code == 401
+    assert client.get("/api/dashboard", headers=anonymous).status_code == 401
+
 def test_health(client):
     assert client.get("/health").json() == {"status": "ok"}
 
 
 # --- Auth -----------------------------------------------------------------
-def auth_headers(client, username="aliasgar", password="SupportTick2026!"):
+def auth_headers(client, username="aliasgar", password="test-admin-password"):
     response = client.post("/api/auth/login", json={"username": username, "password": password})
     assert response.status_code == 200, response.text
     token = response.json()["token"]
@@ -163,7 +190,7 @@ def auth_headers(client, username="aliasgar", password="SupportTick2026!"):
 
 def test_login_and_me(client):
     response = client.post(
-        "/api/auth/login", json={"username": "aliasgar", "password": "SupportTick2026!"}
+        "/api/auth/login", json={"username": "aliasgar", "password": "test-admin-password"}
     )
     assert response.status_code == 200
     body = response.json()
@@ -178,10 +205,10 @@ def test_login_and_me(client):
     bad = client.post("/api/auth/login", json={"username": "aliasgar", "password": "wrong"})
     assert bad.status_code == 401
 
-    missing_token = client.get("/api/auth/me")
+    missing_token = client.get("/api/auth/me", headers={"Authorization": ""})
     assert missing_token.status_code == 401
 
-    agent_login = client.post("/api/auth/login", json={"username": "riley", "password": "agent123456"})
+    agent_login = client.post("/api/auth/login", json={"username": "riley", "password": "test-agent-password"})
     assert agent_login.status_code == 200
     assert agent_login.json()["user"]["role"] == "agent"
 
@@ -194,10 +221,10 @@ def test_logout_invalidates_session(client):
 
 
 def test_admin_routes_require_admin(client):
-    agent_headers = auth_headers(client, "riley", "agent123456")
+    agent_headers = auth_headers(client, "riley", "test-agent-password")
     admin_headers = auth_headers(client)
 
-    anon = client.get("/api/admin/agents")
+    anon = client.get("/api/admin/agents", headers={"Authorization": ""})
     assert anon.status_code == 401
 
     agent = client.get("/api/admin/agents", headers=agent_headers)
@@ -330,7 +357,7 @@ def test_bulk_status_and_delete_ticket(client):
         detail = client.get(f"/api/tickets/{tid}").json()
         assert detail["status"] == "Closed"
 
-    agent_headers = auth_headers(client, "riley", "agent123456")
+    agent_headers = auth_headers(client, "riley", "test-agent-password")
     as_agent = client.delete(f"/api/tickets/{ids[0]}", headers=agent_headers)
     assert as_agent.status_code == 403
 

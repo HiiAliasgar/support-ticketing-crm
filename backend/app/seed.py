@@ -60,8 +60,6 @@ DEMO_NOTES = {
 }
 
 DEFAULT_ADMIN_USERNAME = "aliasgar"
-DEFAULT_ADMIN_PASSWORD = "SupportTick2026!"
-DEFAULT_AGENT_PASSWORD = "agent123456"
 
 AGENTS = [
     ("riley", "Riley Patel"),
@@ -86,8 +84,12 @@ def maybe_seed_users(db=None) -> None:
         target_username = os.getenv("ADMIN_USERNAME", DEFAULT_ADMIN_USERNAME)
 
         if not users_exist:
-            admin_password = os.getenv("ADMIN_PASSWORD", DEFAULT_ADMIN_PASSWORD)
-            agent_password = os.getenv("AGENT_PASSWORD", DEFAULT_AGENT_PASSWORD)
+            admin_password = os.getenv("ADMIN_PASSWORD")
+            agent_password = os.getenv("AGENT_PASSWORD")
+            if not admin_password or not agent_password:
+                raise RuntimeError(
+                    "Set ADMIN_PASSWORD and AGENT_PASSWORD before initializing an empty SupportTick database."
+                )
 
             digest, salt, iterations = hash_password(admin_password)
             db.add(
