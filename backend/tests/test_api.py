@@ -221,7 +221,7 @@ def test_logout_invalidates_session(client):
 
 
 def test_admin_routes_require_admin(client):
-    agent_headers = auth_headers(client, "riley", "agent123456")
+    agent_headers = auth_headers(client, "riley", "test-agent-password")
     admin_headers = auth_headers(client)
 
     anon = client.get("/api/admin/agents", headers={"Authorization": ""})
@@ -357,7 +357,7 @@ def test_bulk_status_and_delete_ticket(client):
         detail = client.get(f"/api/tickets/{tid}").json()
         assert detail["status"] == "Closed"
 
-    agent_headers = auth_headers(client, "riley", "agent123456")
+    agent_headers = auth_headers(client, "riley", "test-agent-password")
     as_agent = client.delete(f"/api/tickets/{ids[0]}", headers=agent_headers)
     assert as_agent.status_code == 403
 
