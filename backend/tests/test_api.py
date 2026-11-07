@@ -37,6 +37,12 @@ def client(tmp_path, monkeypatch) -> TestClient:
 
     app_module.app.dependency_overrides[get_db] = override_get_db
     with TestClient(app_module.app) as test_client:
+        login = test_client.post(
+            "/api/auth/login",
+            json={"username": "aliasgar", "password": "test-admin-password"},
+        )
+        assert login.status_code == 200, login.text
+        test_client.headers.update({"Authorization": f"Bearer {login.json()['token']}"})
         yield test_client
     app_module.app.dependency_overrides.clear()
 
