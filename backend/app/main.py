@@ -100,6 +100,7 @@ def list_tickets(
     search: Optional[str] = Query(default=None, description="Search across id, name, email, subject, description"),
     page: Optional[int] = Query(default=None, ge=1, description="Enable pagination (1-based)"),
     per_page: Optional[int] = Query(default=None, ge=1, le=100, description="Items per page (with page)"),
+    user: models.User = Depends(current_user),
     db: Session = Depends(get_db),
 ):
     query = select(models.Ticket)
@@ -139,13 +140,13 @@ def list_tickets(
 
 
 @app.get("/api/tickets/{ticket_id}", response_model=schemas.TicketDetail)
-def get_ticket(ticket_id: str, db: Session = Depends(get_db)) -> models.Ticket:
+def get_ticket(ticket_id: str, user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> models.Ticket:
     return _ticket_from(ticket_id, db)
 
 
 @app.put("/api/tickets/{ticket_id}", response_model=schemas.UpdateResponse)
 def update_ticket(
-    ticket_id: str, payload: schemas.TicketUpdate, db: Session = Depends(get_db)
+    ticket_id: str, payload: schemas.TicketUpdate, user: models.User = Depends(current_user), db: Session = Depends(get_db)
 ) -> schemas.UpdateResponse:
     ticket = _ticket_from(ticket_id, db)
 
@@ -175,7 +176,7 @@ def update_ticket(
 
 
 @app.post("/api/tickets/{ticket_id}/notes", response_model=schemas.NoteOut, status_code=201)
-def add_note(ticket_id: str, payload: schemas.NoteCreate, db: Session = Depends(get_db)) -> models.Note:
+def add_note(ticket_id: str, payload: schemas.NoteCreate, user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> models.Note:
     ticket = _ticket_from(ticket_id, db)
     note = models.Note(ticket_id=ticket.ticket_id, note_text=payload.note_text.strip(), author=payload.author.strip())
     db.add(note)
@@ -213,7 +214,7 @@ def assign_ticket(
 
 
 @app.get("/api/agents")
-def list_agents(db: Session = Depends(get_db)) -> list[dict]:
+def list_agents(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> list[dict]:
     agents = db.scalars(select(models.User).where(models.User.role == "agent", models.User.active.is_(True))).all()
     return [
         {"id": agent.id, "username": agent.username, "display_name": agent.display_name}
@@ -222,7 +223,7 @@ def list_agents(db: Session = Depends(get_db)) -> list[dict]:
 
 
 @app.get("/api/dashboard", response_model=schemas.DashboardResponse)
-def dashboard(db: Session = Depends(get_db)) -> schemas.DashboardResponse:
+def dashboard(user: models.User = Depends(current_user), db: Session = Depends(get_db)) -> schemas.DashboardResponse:
     total = db.scalar(select(func.count(models.Ticket.id))) or 0
     counts: dict[str, int] = {}
     for status in STATUSES:
