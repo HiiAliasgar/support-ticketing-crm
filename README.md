@@ -47,6 +47,19 @@ pip install -r requirements-dev.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
+### Required environment variables
+
+When initializing a new database, configure unique values for:
+
+- `ADMIN_USERNAME` — initial administrator username (defaults to `aliasgar`).
+- `ADMIN_PASSWORD` — required initial administrator password.
+- `AGENT_PASSWORD` — required initial password for the demo agent accounts.
+- `AUTO_SEED_DEMO` — set to `0` to disable demo ticket creation.
+
+Do not use shared or example passwords in a deployment. The application no longer creates accounts with hard-coded default passwords. Changing these environment variables does not rotate passwords for users already stored in an existing database; reset those accounts separately.
+
+Internal ticket listing, ticket details, ticket updates, internal notes, agent listing and dashboard data require a bearer session obtained from `POST /api/auth/login`. Public ticket submission through `POST /api/tickets` remains available.
+
 ### Frontend development server
 
 In another terminal:
